@@ -162,16 +162,32 @@ RUN set -ex\
     || cp /cachi2/output/deps/generic/aws-ip-ranges.json util/ipresolver/aws-ip-ranges.json \
 	;
 
-# Final is the end container, where all the work from the other
-# containers are copied in.
-FROM base AS final
-LABEL maintainer "quay-devel@redhat.com"
+FROM base AS ubi-micro-build
 
 ENV QUAYDIR /quay-registry
 ENV QUAYCONF /quay-registry/conf
 ENV QUAYRUN /quay-registry/conf
 ENV QUAYPATH $QUAYDIR
 ENV PYTHONPATH $QUAYPATH
+
+ADD build-umd-image.sh .
+RUN UBI_VERSION=9 ./build-umd-image.sh --module nginx:1.22 \
+    python3.12 nginx dnsmasq memcached \
+    glibc-langpack-en glibc-minimal-langpack \
+ 		libpq-devel \
+		libjpeg-turbo \
+		openldap \
+		openssl \
+		python3-gpg \
+    python3-six \
+		skopeo \
+    findutils
+
+COPY --from=pushgateway /usr/local/bin/pushgateway /mnt/rootfs/usr/local/bin/pushgateway
+COPY --from=build-python /opt/app-root/lib/python3.12/site-packages /mnt/rootfs/opt/app-root/lib/python3.12/site-packages
+COPY --from=build-python /opt/app-root/bin /mnt/rootfs/opt/app-root/bin
+COPY --from=config-tool /opt/app-root/src/go/bin/config-tool /mnt/rootfs/bin
+COPY --from=build-quaydir /quaydir /mnt/rootfs/$QUAYDIR
 
 # All of these chgrp+chmod commands are an Openshift-ism.
 #
@@ -183,38 +199,58 @@ RUN set -ex\
 	; newdir() { for d in "$@"; do mkdir -m 775 "$d" && ls -ld "$d"; done; }\
 # Allow TLS certs to be created and installed as non-root user.
 # See also update-ca-trust(8).
-	; setperms /etc/pki/ca-trust/extracted /etc/pki/ca-trust/source/anchors\
+	; setperms /mnt/rootfs/etc/pki/ca-trust/extracted /mnt/rootfs/etc/pki/ca-trust/source/anchors\
 # Allow for nginx to run unprivledged.
-	; setperms /etc/nginx\
-	; ln -sf /dev/stdout /var/log/nginx/access.log\
-	; ln -sf /dev/stdout /var/log/nginx/error.log\
+	; setperms /mnt/rootfs/etc/nginx\
+	; ln -sf /mnt/rootfs/dev/stdout /var/log/nginx/access.log\
+	; ln -sf /mnt/rootfs/dev/stdout /var/log/nginx/error.log\
 # The code doesn't agree on where the configuration lives, so create a
 # symlink.
-	; ln -s $QUAYCONF /conf\
+	; ln -s /mnt/rootfs/$QUAYCONF /conf\
 # Make a grip of runtime directories.
-	; newdir /certificates "$QUAYDIR" "$QUAYDIR/conf" "$QUAYDIR/conf/stack" /datastorage\
+	; newdir /mnt/rootfs/certificates /mnt/rootfs/$QUAYDIR /mnt/rootfs/$QUAYDIR/conf /mnt/rootfs/$QUAYDIR/conf/stack /mnt/rootfs/datastorage\
 # Another Openshift-ism: it doesn't bother picking a uid that means
 # anything to the OS inside the container, so the process needs
 # permissions to modify the user database.
 # Harden /etc/passwd – no group write.
-    ; chown root:root /etc/passwd \
-    ; chmod 0644      /etc/passwd \
-	; chown -R 1001:0 /etc/pki/ \
-	; chown -R 1001:0 /etc/ssl/ \
-	; chown -R 1001:0 /quay-registry \
-	; chmod ug+wx -R /etc/pki/ \
-	; chmod ug+wx -R /etc/ssl/
+    ; chown root:root /mnt/rootfs/etc/passwd \
+    ; chmod 0644      /mnt/rootfs/etc/passwd \
+	; chown -R 1001:0 /mnt/rootfs/etc/pki/ \
+	; chown -R 1001:0 /mnt/rootfs/etc/ssl/ \
+	; chown -R 1001:0 /mnt/rootfs/quay-registry \
+	; chmod ug+wx -R /mnt/rootfs/etc/pki/ \
+	; chmod ug+wx -R /mnt/rootfs/etc/ssl/
 
+# Final is the end container, where all the work from the other
+# containers are copied in.
+FROM scratch AS final
 
-RUN python3 -m pip install --no-cache-dir --progress-bar off dumb-init
+ENV PATH=/app/bin/:$PATH \
+    PYTHON_VERSION=3.12 \
+    PATH=$HOME/.local/bin/:$PATH \
+    PYTHONUNBUFFERED=1 \
+    PYTHONIOENCODING=UTF-8 \
+    LC_ALL=en_US.UTF-8 \
+    LANG=en_US.UTF-8 \
+    CNB_STACK_ID=com.redhat.stacks.ubi9-python-312 \
+    CNB_USER_ID=1001 \
+    CNB_GROUP_ID=0 \
+    PIP_NO_CACHE_DIR=off \
+    PYTHONUSERBASE=/app \
+    TZ=UTC
+
+LABEL maintainer "quay-devel@redhat.com"
+
+ENV QUAYDIR /quay-registry
+ENV QUAYCONF /quay-registry/conf
+ENV QUAYRUN /quay-registry/conf
+ENV QUAYPATH $QUAYDIR
+ENV PYTHONPATH $QUAYPATH
 
 WORKDIR $QUAYDIR
-# Ordered from least changing to most changing.
-COPY --from=pushgateway /usr/local/bin/pushgateway /usr/local/bin/pushgateway
-COPY --from=build-python /opt/app-root/lib/python3.12/site-packages /opt/app-root/lib/python3.12/site-packages
-COPY --from=build-python /opt/app-root/bin /opt/app-root/bin
-COPY --from=config-tool /opt/app-root/src/go/bin/config-tool /bin
-COPY --from=build-quaydir /quaydir $QUAYDIR
+
+COPY --from=ubi-micro-build /mnt/rootfs /
+COPY --from=ubi-micro-build /usr/share/buildinfo /
 
 EXPOSE 8080 8443 7443 9091 55443
 # Don't expose /var/log as a volume, because we just configured it
@@ -224,5 +260,5 @@ EXPOSE 8080 8443 7443 9091 55443
 VOLUME ["/datastorage", "/tmp", "/conf/stack"]
 # In non-Openshift environments, drop privilege.
 USER 1001
-ENTRYPOINT ["dumb-init", "--", "/quay-registry/quay-entrypoint.sh"]
+ENTRYPOINT ["/quay-registry/quay-entrypoint.sh"]
 CMD ["registry"]
