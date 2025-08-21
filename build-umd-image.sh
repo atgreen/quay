@@ -175,9 +175,9 @@ echo
 # Delete the `remove` packages
 <remove xargs rpm -v -r "$rootfs" --erase --nodeps --allmatches
 
-groupadd -R "$rootfs"/ ubi-micro-dev -g 1001
-
-useradd -R "$rootfs"/ \
-        -u 1001 -g ubi-micro-dev -G ubi-micro-dev \
-        -m -d /home/ubi-micro-dev -s /sbin/nologin \
-        -c "ubi-micro-dev user" ubi-micro-dev
+#groupadd -R "$rootfs"/ ubi-micro-dev -g 1001
+#
+#useradd -R "$rootfs"/ \
+#        -u 1001 -g ubi-micro-dev -G ubi-micro-dev \
+#        -m -d /home/ubi-micro-dev -s /sbin/nologin \
+#        -c "ubi-micro-dev user" ubi-micro-dev

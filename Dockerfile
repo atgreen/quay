@@ -3,7 +3,7 @@ FROM registry.access.redhat.com/ubi9/python-312:latest as base
 # final container here.
 USER root
 
-ENV PATH=/app/bin/:$PATH \
+ENV PATH=/opt/app-root/bin/:$PATH \
     PYTHON_VERSION=3.12 \
     PATH=$HOME/.local/bin/:$PATH \
     PYTHONUNBUFFERED=1 \
@@ -15,7 +15,7 @@ ENV PATH=/app/bin/:$PATH \
     CNB_GROUP_ID=0 \
     PIP_NO_CACHE_DIR=off
 
-ENV PYTHONUSERBASE /app
+ENV PYTHONUSERBASE /opt/app-root
 ENV TZ UTC
 RUN set -ex\
 	; dnf -y module enable nginx:1.22 \
@@ -55,12 +55,12 @@ RUN set -ex\
 		openldap-devel \
 		python3.12-devel \
 		libffi-devel \
-        openssl-devel \
-        diffutils \
-        file \
-        make \
-        libjpeg-turbo \
-        libjpeg-turbo-devel \
+    openssl-devel \
+    diffutils \
+    file \
+    make \
+    libjpeg-turbo \
+    libjpeg-turbo-devel \
 		wget \
 		rust-toolset \
 		libxml2-devel \
@@ -182,6 +182,7 @@ RUN UBI_VERSION=9 ./build-umd-image.sh --module nginx:1.22 \
     python3-six \
 		skopeo \
     findutils
+RUN ln -s ./python3.12 /mnt/rootfs/usr/bin/python
 
 COPY --from=pushgateway /usr/local/bin/pushgateway /mnt/rootfs/usr/local/bin/pushgateway
 COPY --from=build-python /opt/app-root/lib/python3.12/site-packages /mnt/rootfs/opt/app-root/lib/python3.12/site-packages
@@ -225,9 +226,8 @@ RUN set -ex\
 # containers are copied in.
 FROM scratch AS final
 
-ENV PATH=/app/bin/:$PATH \
+ENV PATH=/opt/app-root/bin/:$PATH \
     PYTHON_VERSION=3.12 \
-    PATH=$HOME/.local/bin/:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=UTF-8 \
     LC_ALL=en_US.UTF-8 \
@@ -236,7 +236,7 @@ ENV PATH=/app/bin/:$PATH \
     CNB_USER_ID=1001 \
     CNB_GROUP_ID=0 \
     PIP_NO_CACHE_DIR=off \
-    PYTHONUSERBASE=/app \
+    PYTHONUSERBASE=/opt/app-root \
     TZ=UTC
 
 LABEL maintainer "quay-devel@redhat.com"
