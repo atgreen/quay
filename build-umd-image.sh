@@ -123,6 +123,7 @@ python3-pip-wheel
 python3-setuptools-wheel
 sqlite-libs
 systemd
+systemd-libs
 EOF
 
 # Sort the keep file
