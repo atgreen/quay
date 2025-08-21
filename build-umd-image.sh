@@ -114,6 +114,7 @@ nss-softokn
 nss-softokn-freebl
 nss-sysinit
 nss-util
+pam
 platform-python
 platform-python-setuptools
 python3
@@ -121,6 +122,7 @@ python3-libs
 python3-pip-wheel
 python3-setuptools-wheel
 sqlite-libs
+systemd
 EOF
 
 # Sort the keep file
